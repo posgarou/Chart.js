@@ -58,20 +58,19 @@
 		// High pixel density displays - multiply the size of the canvas height/width by the device pixel ratio, then scale.
 		Chart.helpers.retinaScale(this);
 
+		if (config) {
+			this.controller = new Chart.Controller(this);
+		}
+
 		// Always bind this so that if the responsive state changes we still work
 		var _this = this;
 		Chart.helpers.addResizeListener(context.canvas.parentNode, function() {
-			if (config.options.responsive) {
+			if (_this.controller && _this.controller.config.options.responsive) {
 				_this.controller.resize();
 			}
 		});
 
-		if (config) {
-			this.controller = new Chart.Controller(this);
-			return this.controller;
-		}
-
-		return this;
+		return this.controller ? this.controller : this;
 
 	};
 
@@ -121,7 +120,7 @@
 
 	//Declare root variable - window in the browser, global on the server
 	var root = this,
-		previous = root.Chart;
+		Chart = root.Chart;
 
 	//Global Chart helpers object for utility methods and classes
 	var helpers = Chart.helpers = {};
@@ -252,7 +251,7 @@
 									base[key].push(helpers.configMerge(valueObj.type ? Chart.scaleService.getScaleDefaults(valueObj.type) : {}, valueObj));
 								} else if (valueObj.type !== base[key][index].type) {
 									// Type changed. Bring in the new defaults before we bring in valueObj so that valueObj can override the correct scale defaults
-									base[key][index] = helpers.configMerge(base[key][index], valueObj.type ? Chart.scaleService.getScaleDefaults(valueObj.type) : {}, valueObj)
+									base[key][index] = helpers.configMerge(base[key][index], valueObj.type ? Chart.scaleService.getScaleDefaults(valueObj.type) : {}, valueObj);
 								} else {
 									// Type is the same
 									base[key][index] = helpers.configMerge(base[key][index], valueObj);
@@ -389,7 +388,7 @@
 		},
 		log10 = helpers.log10 = function(x) {
 			if (Math.log10) {
-				return Math.log10(x)
+				return Math.log10(x);
 			} else {
 				return Math.log(x) / Math.LN10;
 			}
@@ -954,7 +953,7 @@
 				// can use classlist
 				hiddenIframe.classlist.add(hiddenIframeClass);
 			} else {
-				hiddenIframe.setAttribute('class', hiddenIframeClass)
+				hiddenIframe.setAttribute('class', hiddenIframeClass);
 			}
 
 			// Set the style
@@ -977,14 +976,14 @@
 				if (callback) {
 					callback();
 				}
-			}
+			};
 		},
 		removeResizeListener = helpers.removeResizeListener = function(node) {
 			var hiddenIframe = node.querySelector('.chartjs-hidden-iframe');
 
 			// Remove the resize detect iframe
 			if (hiddenIframe) {
-				hiddenIframe.remove();
+				hiddenIframe.parentNode.removeChild(hiddenIframe);
 			}
 		},
 		isArray = helpers.isArray = function(obj) {
@@ -992,8 +991,10 @@
 				return Object.prototype.toString.call(arg) === '[object Array]';
 			}
 			return Array.isArray(obj);
+		},
+		isDatasetVisible = helpers.isDatasetVisible = function(dataset) {
+			return !dataset.hidden;
 		};
-
 }).call(this);
 
 (function() {
@@ -1362,7 +1363,7 @@
 
 				this.scale = scale;
 
-				this.scales['radialScale'] = scale;
+				this.scales.radialScale = scale;
 			}
 
 			Chart.scaleService.update(this, this.chart.width, this.chart.height);
@@ -1464,7 +1465,9 @@
 
 			// Draw each dataset via its respective controller (reversed to support proper line stacking)
 			helpers.each(this.data.datasets, function(dataset, datasetIndex) {
-				dataset.controller.draw(ease);
+				if (helpers.isDatasetVisible(dataset)) {
+					dataset.controller.draw(ease);
+				}
 			}, this);
 
 			// Finally draw the tooltip
@@ -1479,12 +1482,14 @@
 			var elementsArray = [];
 
 			helpers.each(this.data.datasets, function(dataset, datasetIndex) {
-				helpers.each(dataset.metaData, function(element, index) {
-					if (element.inRange(eventPosition.x, eventPosition.y)) {
-						elementsArray.push(element);
-						return elementsArray;
-					}
-				}, this);
+				if (helpers.isDatasetVisible(dataset)) {
+					helpers.each(dataset.metaData, function(element, index) {
+						if (element.inRange(eventPosition.x, eventPosition.y)) {
+							elementsArray.push(element);
+							return elementsArray;
+						}
+					}, this);
+				}
 			}, this);
 
 			return elementsArray;
@@ -1495,11 +1500,13 @@
 			var elementsArray = [];
 
 			helpers.each(this.data.datasets, function(dataset, datasetIndex) {
-				helpers.each(dataset.metaData, function(element, index) {
-					if (element.inLabelRange(eventPosition.x, eventPosition.y)) {
-						elementsArray.push(element);
-					}
-				}, this);
+				if (helpers.isDatasetVisible(dataset)) {
+					helpers.each(dataset.metaData, function(element, index) {
+						if (element.inLabelRange(eventPosition.x, eventPosition.y)) {
+							elementsArray.push(element);
+						}
+					}, this);
+				}
 			}, this);
 
 			return elementsArray;
@@ -1509,15 +1516,17 @@
 			var eventPosition = helpers.getRelativePosition(e, this.chart);
 			var elementsArray = [];
 
-			for (var datasetIndex = 0; datasetIndex < this.data.datasets.length; datasetIndex++) {
-				for (var elementIndex = 0; elementIndex < this.data.datasets[datasetIndex].metaData.length; elementIndex++) {
-					if (this.data.datasets[datasetIndex].metaData[elementIndex].inLabelRange(eventPosition.x, eventPosition.y)) {
-						helpers.each(this.data.datasets[datasetIndex].metaData, function(element, index) {
-							elementsArray.push(element);
-						}, this);
-					}
+			helpers.each(this.data.datasets, function(dataset, datasetIndex) {
+				if (helpers.isDatasetVisible(dataset)) {
+					helpers.each(dataset.metaData, function(element, elementIndex) {
+						if (element.inLabelRange(eventPosition.x, eventPosition.y)) {
+							helpers.each(dataset.metaData, function(element, index) {
+								elementsArray.push(element);
+							}, this);
+						}
+					}, this);
 				}
-			}
+			}, this);
 
 			return elementsArray.length ? elementsArray : [];
 		},
@@ -1624,8 +1633,8 @@
 						break;
 					case 'label':
 					case 'dataset':
-						for (var i = 0; i < this.active.length; i++) {
-							this.data.datasets[this.active[i]._datasetIndex].controller.setHoverStyle(this.active[i]);
+						for (var j = 0; j < this.active.length; j++) {
+							this.data.datasets[this.active[j]._datasetIndex].controller.setHoverStyle(this.active[j]);
 						}
 						break;
 					default:
@@ -1793,9 +1802,16 @@
 		setDimensions: function() {
 			// Set the unconstrained dimension before label rotation
 			if (this.isHorizontal()) {
+				// Reset position before calculating rotation
 				this.width = this.maxWidth;
+				this.left = 0;
+				this.right = this.width;
 			} else {
 				this.height = this.maxHeight;
+
+				// Reset position before calculating rotation
+				this.top = 0;
+				this.bottom = this.height;
 			}
 
 			// Reset padding
@@ -2042,8 +2058,9 @@
 				var scaleLabelX;
 				var scaleLabelY;
 
-				// Make sure we draw text in the correct color
+				// Make sure we draw text in the correct color and font
 				this.ctx.fillStyle = this.options.ticks.fontColor;
+				var labelFont = helpers.fontString(this.options.ticks.fontSize, this.options.ticks.fontStyle, this.options.ticks.fontFamily);
 
 				if (this.isHorizontal()) {
 					setContextLineSettings = true;
@@ -2099,7 +2116,7 @@
 							this.ctx.save();
 							this.ctx.translate(xLabelValue, (isRotated) ? this.top + 12 : this.options.position === "top" ? this.bottom - 10 : this.top + 10);
 							this.ctx.rotate(helpers.toRadians(this.labelRotation) * -1);
-							this.ctx.font = this.font;
+							this.ctx.font = labelFont;
 							this.ctx.textAlign = (isRotated) ? "right" : "center";
 							this.ctx.textBaseline = (isRotated) ? "middle" : this.options.position === "top" ? "bottom" : "top";
 							this.ctx.fillText(label, 0, 0);
@@ -2111,6 +2128,7 @@
 						// Draw the scale label
 						this.ctx.textAlign = "center";
 						this.ctx.textBaseline = 'middle';
+						this.ctx.fillStyle = this.options.scaleLabel.fontColor; // render in correct colour
 						this.ctx.font = helpers.fontString(this.options.scaleLabel.fontSize, this.options.scaleLabel.fontStyle, this.options.scaleLabel.fontFamily);
 
 						scaleLabelX = this.left + ((this.right - this.left) / 2); // midpoint of the width
@@ -2187,7 +2205,7 @@
 							
 							this.ctx.translate(xLabelValue, yLabelValue);
 							this.ctx.rotate(helpers.toRadians(this.labelRotation) * -1);
-							this.ctx.font = this.font;
+							this.ctx.font = labelFont;
 							this.ctx.textBaseline = "middle";
 							this.ctx.fillText(label, 0, 0);
 							this.ctx.restore();
@@ -2204,6 +2222,7 @@
 						this.ctx.translate(scaleLabelX, scaleLabelY);
 						this.ctx.rotate(rotation);
 						this.ctx.textAlign = "center";
+						this.ctx.fillStyle = this.options.scaleLabel.fontColor; // render in correct colour
 						this.ctx.font = helpers.fontString(this.options.scaleLabel.fontSize, this.options.scaleLabel.fontStyle, this.options.scaleLabel.fontFamily);
 						this.ctx.textBaseline = 'middle';
 						this.ctx.fillText(this.options.scaleLabel.labelString, 0, 0);
@@ -2237,13 +2256,14 @@
 		defaults: {},
 		registerScaleType: function(type, scaleConstructor, defaults) {
 			this.constructors[type] = scaleConstructor;
-			this.defaults[type] = helpers.scaleMerge(Chart.defaults.scale, defaults);
+			this.defaults[type] = helpers.clone(defaults);
 		},
 		getScaleConstructor: function(type) {
 			return this.constructors.hasOwnProperty(type) ? this.constructors[type] : undefined;
 		},
 		getScaleDefaults: function(type) {
-			return this.defaults.hasOwnProperty(type) ? this.defaults[type] : {};
+			// Return the scale defaults merged with the global settings so that we always use the latest ones
+			return this.defaults.hasOwnProperty(type) ? helpers.scaleMerge(Chart.defaults.scale, this.defaults[type]) : {};
 		},
 		// The interesting function
 		update: function(chartInstance, width, height) {
@@ -2968,15 +2988,15 @@
 		// Get the number of datasets that display bars. We use this to correctly calculate the bar width
 		getBarCount: function getBarCount() {
 			var barCount = 0;
-
 			helpers.each(this.chart.data.datasets, function(dataset) {
-				if (dataset.type === 'bar') {
-					++barCount;
-				} else if (dataset.type === undefined && this.chart.config.type === 'bar') {
-					++barCount;
+				if (helpers.isDatasetVisible(dataset)) {
+					if (dataset.type === 'bar') {
+						++barCount;
+					} else if (dataset.type === undefined && this.chart.config.type === 'bar') {
+						++barCount;
+					}
 				}
 			}, this);
-
 			return barCount;
 		},
 
@@ -3094,14 +3114,16 @@
 
 				if (value < 0) {
 					for (var i = 0; i < datasetIndex; i++) {
-						if (this.chart.data.datasets[i].yAxisID === yScale.id) {
-							base += this.chart.data.datasets[i].data[index] < 0 ? this.chart.data.datasets[i].data[index] : 0;
+						var negDS = this.chart.data.datasets[i];
+						if (helpers.isDatasetVisible(negDS) && negDS.yAxisID === yScale.id) {
+							base += negDS.data[index] < 0 ? negDS.data[index] : 0;
 						}
 					}
 				} else {
 					for (var j = 0; j < datasetIndex; j++) {
-						if (this.chart.data.datasets[j].yAxisID === yScale.id) {
-							base += this.chart.data.datasets[j].data[index] > 0 ? this.chart.data.datasets[j].data[index] : 0;
+						var posDS = this.chart.data.datasets[j];
+						if (helpers.isDatasetVisible(posDS) && posDS.yAxisID === yScale.id) {
+							base += posDS.data[index] > 0 ? posDS.data[index] : 0;
 						}
 					}
 				}
@@ -3127,10 +3149,11 @@
 
 			var xScale = this.getScaleForID(this.getDataset().xAxisID);
 			var yScale = this.getScaleForID(this.getDataset().yAxisID);
-
-			var datasetCount = !this.chart.isCombo ? this.chart.data.datasets.length : helpers.where(this.chart.data.datasets, function(ds) {
+			/*var datasetCount = !this.chart.isCombo ? this.chart.data.datasets.length : helpers.where(this.chart.data.datasets, function(ds) {
 				return ds.type == 'bar';
-			}).length;
+			}).length;*/
+			var datasetCount = this.getBarCount();
+
 			var tickWidth = (function() {
 				var min = xScale.getPixelForValue(null, 1) - xScale.getPixelForValue(null, 0);
 				for (var i = 2; i < this.getDataset().data.length; i++) {
@@ -3168,14 +3191,28 @@
 
 		},
 
+		// Get bar index from the given dataset index accounting for the fact that not all bars are visible
+		getBarIndex: function(datasetIndex) {
+			var barIndex = 0;
+
+			for (var j = 0; j < datasetIndex; ++j) {
+				if (helpers.isDatasetVisible(this.chart.data.datasets[j]) &&
+					(this.chart.data.datasets[j].type === 'bar' || (this.chart.data.datasets[j].type === undefined && this.chart.config.type === 'bar'))) {
+					++barIndex;
+				}
+			}
+
+			return barIndex;
+		},
 
 		calculateBarX: function(index, datasetIndex) {
 
 			var yScale = this.getScaleForID(this.getDataset().yAxisID);
 			var xScale = this.getScaleForID(this.getDataset().xAxisID);
+			var barIndex = this.getBarIndex(datasetIndex);
 
 			var ruler = this.getRuler();
-			var leftTick = xScale.getPixelForValue(null, index, datasetIndex, this.chart.isCombo);
+			var leftTick = xScale.getPixelForValue(null, index, barIndex, this.chart.isCombo);
 			leftTick -= this.chart.isCombo ? (ruler.tickWidth / 2) : 0;
 
 			if (yScale.options.stacked) {
@@ -3185,9 +3222,9 @@
 			return leftTick +
 				(ruler.barWidth / 2) +
 				ruler.categorySpacing +
-				(ruler.barWidth * datasetIndex) +
+				(ruler.barWidth * barIndex) +
 				(ruler.barSpacing / 2) +
-				(ruler.barSpacing * datasetIndex);
+				(ruler.barSpacing * barIndex);
 		},
 
 		calculateBarY: function(index, datasetIndex) {
@@ -3203,10 +3240,13 @@
 					sumNeg = 0;
 
 				for (var i = 0; i < datasetIndex; i++) {
-					if (this.chart.data.datasets[i].data[index] < 0) {
-						sumNeg += this.chart.data.datasets[i].data[index] || 0;
-					} else {
-						sumPos += this.chart.data.datasets[i].data[index] || 0;
+					var ds = this.chart.data.datasets[i];
+					if (helpers.isDatasetVisible(ds)) {
+						if (ds.data[index] < 0) {
+							sumNeg += ds.data[index] || 0;
+						} else {
+							sumPos += ds.data[index] || 0;
+						}
 					}
 				}
 
@@ -3251,6 +3291,225 @@
 
 
 
+}).call(this);
+
+(function() {
+
+	"use strict";
+
+	var root = this,
+		Chart = root.Chart,
+		helpers = Chart.helpers;
+
+	Chart.defaults.bubble = {
+		hover: {
+			mode: "single"
+		},
+
+		scales: {
+			xAxes: [{
+				type: "linear", // bubble should probably use a linear scale by default
+				position: "bottom",
+				id: "x-axis-0", // need an ID so datasets can reference the scale
+			}],
+			yAxes: [{
+				type: "linear",
+				position: "left",
+				id: "y-axis-0",
+			}],
+		},
+
+		tooltips: {
+			template: "(<%= value.x %>, <%= value.y %>, <%= value.r %>)",
+			multiTemplate: "<%if (datasetLabel){%><%=datasetLabel%>: <%}%>(<%= value.x %>, <%= value.y %>, <%= value.r %>)",
+		},
+	};
+
+
+	Chart.controllers.bubble = function(chart, datasetIndex) {
+		this.initialize.call(this, chart, datasetIndex);
+	};
+
+	helpers.extend(Chart.controllers.bubble.prototype, {
+
+		initialize: function(chart, datasetIndex) {
+			this.chart = chart;
+			this.index = datasetIndex;
+			this.linkScales();
+			this.addElements();
+		},
+		updateIndex: function(datasetIndex) {
+			this.index = datasetIndex;
+		},
+
+		linkScales: function() {
+			if (!this.getDataset().xAxisID) {
+				this.getDataset().xAxisID = this.chart.options.scales.xAxes[0].id;
+			}
+
+			if (!this.getDataset().yAxisID) {
+				this.getDataset().yAxisID = this.chart.options.scales.yAxes[0].id;
+			}
+		},
+
+		getDataset: function() {
+			return this.chart.data.datasets[this.index];
+		},
+
+		getScaleForId: function(scaleID) {
+			return this.chart.scales[scaleID];
+		},
+
+		addElements: function() {
+
+			this.getDataset().metaData = this.getDataset().metaData || [];
+
+			helpers.each(this.getDataset().data, function(value, index) {
+				this.getDataset().metaData[index] = this.getDataset().metaData[index] || new Chart.elements.Point({
+					_chart: this.chart.chart,
+					_datasetIndex: this.index,
+					_index: index,
+				});
+			}, this);
+		},
+		addElementAndReset: function(index) {
+			this.getDataset().metaData = this.getDataset().metaData || [];
+			var point = new Chart.elements.Point({
+				_chart: this.chart.chart,
+				_datasetIndex: this.index,
+				_index: index,
+			});
+
+			// Reset the point
+			this.updateElement(point, index, true);
+
+			// Add to the points array
+			this.getDataset().metaData.splice(index, 0, point);
+
+		},
+		removeElement: function(index) {
+			this.getDataset().metaData.splice(index, 1);
+		},
+
+		reset: function() {
+			this.update(true);
+		},
+
+		buildOrUpdateElements: function buildOrUpdateElements() {
+			// Handle the number of data points changing
+			var numData = this.getDataset().data.length;
+			var numPoints = this.getDataset().metaData.length;
+
+			// Make sure that we handle number of datapoints changing
+			if (numData < numPoints) {
+				// Remove excess bars for data points that have been removed
+				this.getDataset().metaData.splice(numData, numPoints - numData);
+			} else if (numData > numPoints) {
+				// Add new elements
+				for (var index = numPoints; index < numData; ++index) {
+					this.addElementAndReset(index);
+				}
+			}
+		},
+
+		update: function update(reset) {
+			var points = this.getDataset().metaData;
+
+			var yScale = this.getScaleForId(this.getDataset().yAxisID);
+			var xScale = this.getScaleForId(this.getDataset().xAxisID);
+			var scaleBase;
+
+			if (yScale.min < 0 && yScale.max < 0) {
+				scaleBase = yScale.getPixelForValue(yScale.max);
+			} else if (yScale.min > 0 && yScale.max > 0) {
+				scaleBase = yScale.getPixelForValue(yScale.min);
+			} else {
+				scaleBase = yScale.getPixelForValue(0);
+			}
+
+			// Update Points
+			helpers.each(points, function(point, index) {
+				this.updateElement(point, index, reset);
+			}, this);
+
+		},
+
+		updateElement: function(point, index, reset) {
+			var yScale = this.getScaleForId(this.getDataset().yAxisID);
+			var xScale = this.getScaleForId(this.getDataset().xAxisID);
+			var scaleBase;
+
+			if (yScale.min < 0 && yScale.max < 0) {
+				scaleBase = yScale.getPixelForValue(yScale.max);
+			} else if (yScale.min > 0 && yScale.max > 0) {
+				scaleBase = yScale.getPixelForValue(yScale.min);
+			} else {
+				scaleBase = yScale.getPixelForValue(0);
+			}
+
+			helpers.extend(point, {
+				// Utility
+				_chart: this.chart.chart,
+				_xScale: xScale,
+				_yScale: yScale,
+				_datasetIndex: this.index,
+				_index: index,
+
+				// Desired view properties
+				_model: {
+					x: reset ? xScale.getPixelForDecimal(0.5) : xScale.getPixelForValue(this.getDataset().data[index], index, this.index, this.chart.isCombo),
+					y: reset ? scaleBase : yScale.getPixelForValue(this.getDataset().data[index], index, this.index),
+					// Appearance
+					radius: reset ? 0 : point.custom && point.custom.radius ? point.custom.radius : this.getRadius(this.getDataset().data[index]),
+					backgroundColor: point.custom && point.custom.backgroundColor ? point.custom.backgroundColor : helpers.getValueAtIndexOrDefault(this.getDataset().backgroundColor, index, this.chart.options.elements.point.backgroundColor),
+					borderColor: point.custom && point.custom.borderColor ? point.custom.borderColor : helpers.getValueAtIndexOrDefault(this.getDataset().borderColor, index, this.chart.options.elements.point.borderColor),
+					borderWidth: point.custom && point.custom.borderWidth ? point.custom.borderWidth : helpers.getValueAtIndexOrDefault(this.getDataset().borderWidth, index, this.chart.options.elements.point.borderWidth),
+					skip: point.custom && point.custom.skip ? point.custom.skip : this.getDataset().data[index] === null,
+
+					// Tooltip
+					hitRadius: point.custom && point.custom.hitRadius ? point.custom.hitRadius : helpers.getValueAtIndexOrDefault(this.getDataset().hitRadius, index, this.chart.options.elements.point.hitRadius),
+				},
+			});
+
+			point.pivot();
+		},
+
+		getRadius: function(value) {
+			return value.r || this.chart.options.elements.point.radius;
+		},
+
+		draw: function(ease) {
+			var easingDecimal = ease || 1;
+
+			// Transition and Draw the Points
+			helpers.each(this.getDataset().metaData, function(point, index) {
+				point.transition(easingDecimal);
+				point.draw();
+			}, this);
+
+		},
+
+		setHoverStyle: function(point) {
+			// Point
+			var dataset = this.chart.data.datasets[point._datasetIndex];
+			var index = point._index;
+
+			point._model.radius = point.custom && point.custom.hoverRadius ? point.custom.hoverRadius : (helpers.getValueAtIndexOrDefault(dataset.hoverRadius, index, this.chart.options.elements.point.hoverRadius)) + this.getRadius(this.getDataset().data[point._index]);
+			point._model.backgroundColor = point.custom && point.custom.hoverBackgroundColor ? point.custom.hoverBackgroundColor : helpers.getValueAtIndexOrDefault(dataset.hoverBackgroundColor, index, helpers.color(point._model.backgroundColor).saturate(0.5).darken(0.1).rgbString());
+			point._model.borderColor = point.custom && point.custom.hoverBorderColor ? point.custom.hoverBorderColor : helpers.getValueAtIndexOrDefault(dataset.hoverBorderColor, index, helpers.color(point._model.borderColor).saturate(0.5).darken(0.1).rgbString());
+			point._model.borderWidth = point.custom && point.custom.hoverBorderWidth ? point.custom.hoverBorderWidth : helpers.getValueAtIndexOrDefault(dataset.hoverBorderWidth, index, point._model.borderWidth);
+		},
+
+		removeHoverStyle: function(point) {
+			var dataset = this.chart.data.datasets[point._datasetIndex];
+			var index = point._index;
+
+			point._model.radius = point.custom && point.custom.radius ? point.custom.radius : this.getRadius(this.getDataset().data[point._index]);
+			point._model.backgroundColor = point.custom && point.custom.backgroundColor ? point.custom.backgroundColor : helpers.getValueAtIndexOrDefault(this.getDataset().backgroundColor, index, this.chart.options.elements.point.backgroundColor);
+			point._model.borderColor = point.custom && point.custom.borderColor ? point.custom.borderColor : helpers.getValueAtIndexOrDefault(this.getDataset().borderColor, index, this.chart.options.elements.point.borderColor);
+			point._model.borderWidth = point.custom && point.custom.borderWidth ? point.custom.borderWidth : helpers.getValueAtIndexOrDefault(this.getDataset().borderWidth, index, this.chart.options.elements.point.borderWidth);
+		}
+	});
 }).call(this);
 
 (function() {
@@ -3347,7 +3606,7 @@
 			// Make sure that we handle number of datapoints changing
 			if (numData < numArcs) {
 				// Remove excess bars for data points that have been removed
-				this.getDataset().metaData.splice(numData, numArcs - numData)
+				this.getDataset().metaData.splice(numData, numArcs - numData);
 			} else if (numData > numArcs) {
 				// Add new elements
 				for (var index = numArcs; index < numData; ++index) {
@@ -3356,18 +3615,35 @@
 			}
 		},
 
+		getVisibleDatasetCount: function getVisibleDatasetCount() {
+			return helpers.where(this.chart.data.datasets, function(ds) { return helpers.isDatasetVisible(ds); }).length;
+		},
+
+		// Get index of the dataset in relation to the visible datasets. This allows determining the inner and outer radius correctly
+		getRingIndex: function getRingIndex(datasetIndex) {
+			var ringIndex = 0;
+
+			for (var j = 0; j < datasetIndex; ++j) {
+				if (helpers.isDatasetVisible(this.chart.data.datasets[j])) {
+					++ringIndex;
+				}
+			}
+
+			return ringIndex;
+		},
+
 		update: function update(reset) {
 
 			this.chart.outerRadius = Math.max((helpers.min([this.chart.chart.width, this.chart.chart.height]) / 2) - this.chart.options.elements.arc.borderWidth / 2, 0);
 			this.chart.innerRadius = Math.max(this.chart.options.cutoutPercentage ? (this.chart.outerRadius / 100) * (this.chart.options.cutoutPercentage) : 1, 0);
-			this.chart.radiusLength = (this.chart.outerRadius - this.chart.innerRadius) / this.chart.data.datasets.length;
+			this.chart.radiusLength = (this.chart.outerRadius - this.chart.innerRadius) / this.getVisibleDatasetCount();
 
 			this.getDataset().total = 0;
 			helpers.each(this.getDataset().data, function(value) {
 				this.getDataset().total += Math.abs(value);
 			}, this);
 
-			this.outerRadius = this.chart.outerRadius - (this.chart.radiusLength * this.index);
+			this.outerRadius = this.chart.outerRadius - (this.chart.radiusLength * this.getRingIndex(this.index));
 			this.innerRadius = this.outerRadius - this.chart.radiusLength;
 
 			helpers.each(this.getDataset().metaData, function(arc, index) {
@@ -3844,7 +4120,7 @@
 			// Make sure that we handle number of datapoints changing
 			if (numData < numPoints) {
 				// Remove excess bars for data points that have been removed
-				this.getDataset().metaData.splice(numData, numPoints - numData)
+				this.getDataset().metaData.splice(numData, numPoints - numData);
 			} else if (numData > numPoints) {
 				// Add new elements
 				for (var index = numPoints; index < numData; ++index) {
@@ -3853,10 +4129,14 @@
 			}
 		},
 
+		getVisibleDatasetCount: function getVisibleDatasetCount() {
+			return helpers.where(this.chart.data.datasets, function(ds) { return helpers.isDatasetVisible(ds); }).length;
+		},
+
 		update: function update(reset) {
 			this.chart.outerRadius = Math.max((helpers.min([this.chart.chart.width, this.chart.chart.height]) - this.chart.options.elements.arc.borderWidth / 2) / 2, 0);
 			this.chart.innerRadius = Math.max(this.chart.options.cutoutPercentage ? (this.chart.outerRadius / 100) * (this.chart.options.cutoutPercentage) : 1, 0);
-			this.chart.radiusLength = (this.chart.outerRadius - this.chart.innerRadius) / this.chart.data.datasets.length;
+			this.chart.radiusLength = (this.chart.outerRadius - this.chart.innerRadius) / this.getVisibleDatasetCount();
 
 			this.getDataset().total = 0;
 			helpers.each(this.getDataset().data, function(value) {
@@ -3959,14 +4239,6 @@
 		},
 
 	});
-
-
-
-	return;
-
-
-	Chart.Type.extend({});
-
 }).call(this);
 
 (function() {
@@ -4074,7 +4346,7 @@
 			// Make sure that we handle number of datapoints changing
 			if (numData < numPoints) {
 				// Remove excess bars for data points that have been removed
-				this.getDataset().metaData.splice(numData, numPoints - numData)
+				this.getDataset().metaData.splice(numData, numPoints - numData);
 			} else if (numData > numPoints) {
 				// Add new elements
 				for (var index = numPoints; index < numData; ++index) {
@@ -4263,23 +4535,23 @@
             if (this.isHorizontal()) {
                 var innerWidth = this.width - (this.paddingLeft + this.paddingRight);
                 var valueWidth = innerWidth / Math.max((this.data.labels.length - ((this.options.gridLines.offsetGridLines) ? 0 : 1)), 1);
-                var valueOffset = (valueWidth * index) + this.paddingLeft;
+                var widthOffset = (valueWidth * index) + this.paddingLeft;
 
                 if (this.options.gridLines.offsetGridLines && includeOffset) {
-                    valueOffset += (valueWidth / 2);
+                    widthOffset += (valueWidth / 2);
                 }
 
-                return this.left + Math.round(valueOffset);
+                return this.left + Math.round(widthOffset);
             } else {
                 var innerHeight = this.height - (this.paddingTop + this.paddingBottom);
                 var valueHeight = innerHeight / Math.max((this.data.labels.length - ((this.options.gridLines.offsetGridLines) ? 0 : 1)), 1);
-                var valueOffset = (valueHeight * index) + this.paddingTop;
+                var heightOffset = (valueHeight * index) + this.paddingTop;
 
                 if (this.options.gridLines.offsetGridLines && includeOffset) {
-                    valueOffset += (valueHeight / 2);
+                    heightOffset += (valueHeight / 2);
                 }
 
-                return this.top + Math.round(valueOffset);
+                return this.top + Math.round(heightOffset);
             }
         },
     });
@@ -4311,7 +4583,7 @@
 
 			if (this.options.stacked) {
 				helpers.each(this.data.datasets, function(dataset) {
-					if (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id) {
+					if (helpers.isDatasetVisible(dataset) && (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id)) {
 						helpers.each(dataset.data, function(rawValue, index) {
 
 							var value = this.getRightValue(rawValue);
@@ -4338,7 +4610,7 @@
 
 			} else {
 				helpers.each(this.data.datasets, function(dataset) {
-					if (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id) {
+					if (helpers.isDatasetVisible(dataset) && (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id)) {
 						helpers.each(dataset.data, function(rawValue, index) {
 							var value = this.getRightValue(rawValue);
 
@@ -4494,7 +4766,7 @@
 
 			if (this.options.stacked) {
 				helpers.each(this.data.datasets, function(dataset) {
-					if (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id) {
+					if (helpers.isDatasetVisible(dataset) && (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id)) {
 						helpers.each(dataset.data, function(rawValue, index) {
 
 							var value = this.getRightValue(rawValue);
@@ -4516,7 +4788,7 @@
 
 			} else {
 				helpers.each(this.data.datasets, function(dataset) {
-					if (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id) {
+					if (helpers.isDatasetVisible(dataset) && (this.isHorizontal() ? dataset.xAxisID === this.id : dataset.yAxisID === this.id)) {
 						helpers.each(dataset.data, function(rawValue, index) {
 							var value = this.getRightValue(rawValue);
 
@@ -4689,7 +4961,7 @@
 			this.height = this.maxHeight;
 			this.xCenter = Math.round(this.width / 2);
 			this.yCenter = Math.round(this.height / 2);
-			
+
 			var minSize = helpers.min([this.height, this.width]);
 			this.drawingArea = (this.options.display) ? (minSize / 2) - (this.options.ticks.fontSize / 2 + this.options.ticks.backdropPaddingY) : (minSize / 2);
 		},
@@ -4698,21 +4970,23 @@
 			this.max = null;
 
 			helpers.each(this.data.datasets, function(dataset) {
-				helpers.each(dataset.data, function(value, index) {
-					if (value === null) return;
+				if (helpers.isDatasetVisible(dataset)) {
+					helpers.each(dataset.data, function(value, index) {
+						if (value === null) return;
 
-					if (this.min === null) {
-						this.min = value;
-					} else if (value < this.min) {
-						this.min = value;
-					}
+						if (this.min === null) {
+							this.min = value;
+						} else if (value < this.min) {
+							this.min = value;
+						}
 
-					if (this.max === null) {
-						this.max = value;
-					} else if (value > this.max) {
-						this.max = value;
-					}
-				}, this);
+						if (this.max === null) {
+							this.max = value;
+						} else if (value > this.max) {
+							this.max = value;
+						}
+					}, this);
+				}
 			}, this);
 
 			if (this.min === this.max) {
@@ -5267,7 +5541,7 @@
 
 				// Put into the range of (-PI/2, 3PI/2]
 				var startAngle = vm.startAngle < (-0.5 * Math.PI) ? vm.startAngle + (2.0 * Math.PI) : vm.startAngle > (1.5 * Math.PI) ? vm.startAngle - (2.0 * Math.PI) : vm.startAngle;
-				var endAngle = vm.endAngle < (-0.5 * Math.PI) ? vm.endAngle + (2.0 * Math.PI) : vm.endAngle > (1.5 * Math.PI) ? vm.endAngle - (2.0 * Math.PI) : vm.endAngle
+				var endAngle = vm.endAngle < (-0.5 * Math.PI) ? vm.endAngle + (2.0 * Math.PI) : vm.endAngle > (1.5 * Math.PI) ? vm.endAngle - (2.0 * Math.PI) : vm.endAngle;
 
 				//Check if within the range of the open/close angle
 				var betweenAngles = (pointRelativePosition.angle >= startAngle && pointRelativePosition.angle <= endAngle),
@@ -5720,6 +5994,46 @@
 	var helpers = Chart.helpers;
 
 	var defaultConfig = {
+		hover: {
+			mode: 'single',
+		},
+
+		scales: {
+			xAxes: [{
+				type: "linear", // bubble should probably use a linear scale by default
+				position: "bottom",
+				id: "x-axis-0", // need an ID so datasets can reference the scale
+			}],
+			yAxes: [{
+				type: "linear",
+				position: "left",
+				id: "y-axis-0",
+			}],
+		},
+
+		tooltips: {
+			template: "(<%= value.x %>, <%= value.y %>)",
+			multiTemplate: "<%if (datasetLabel){%><%=datasetLabel%>: <%}%>(<%= value.x %>, <%= value.y %>)",
+		},
+
+	};
+
+	Chart.Bubble = function(context, config) {
+		config.options = helpers.configMerge(defaultConfig, config.options);
+		config.type = 'bubble';
+		return new Chart(context, config);
+	};
+
+}).call(this);
+
+(function() {
+	"use strict";
+
+	var root = this;
+	var Chart = root.Chart;
+	var helpers = Chart.helpers;
+
+	var defaultConfig = {
 		aspectRatio: 1,
 		legendTemplate: "<ul class=\"<%=name.toLowerCase()%>-legend\"><% for (var i = 0; i < data.datasets[0].data.length; i++){%><li><span style=\"background-color:<%=data.datasets[0].backgroundColor[i]%>\"><%if(data.labels && i < data.labels.length){%><%=data.labels[i]%><%}%></span></li><%}%></ul>",
 	};
@@ -5729,7 +6043,7 @@
 		config.type = 'doughnut';
 
 		return new Chart(context, config);
-	}
+	};
 	
 }).call(this);
 
@@ -5744,7 +6058,7 @@
 		config.type = 'line';
 
 		return new Chart(context, config);
-	}
+	};
 	
 }).call(this);
 
@@ -5765,7 +6079,7 @@
 		config.type = 'polarArea';
 
 		return new Chart(context, config);
-	}
+	};
 	
 }).call(this);
 
@@ -5785,7 +6099,7 @@
 		config.type = 'radar';
 
 		return new Chart(context, config);
-	}
+	};
 	
 }).call(this);
 
@@ -5825,6 +6139,6 @@
 		config.options = helpers.configMerge(defaultConfig, config.options);
 		config.type = 'line';
 		return new Chart(context, config);
-	}
+	};
 	
 }).call(this);
